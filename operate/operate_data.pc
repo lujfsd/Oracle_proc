@@ -1,0 +1,77 @@
+#include <stdio.h>
+#include <sqlca.h>
+
+void sqlerror()
+{
+	printf("ORACLE error:%.70s\n",sqlca.sqlerrm.sqlerrmc);
+	EXEC SQL WHENEVER SQLERROR continue;
+	EXEC SQL rollback RELEASE;
+}
+
+int login()
+{
+
+	char uid[]="test/test@192.168.30.60:1521/rsdb";
+	EXEC SQL WHENEVER SQLERROR DO sqlerror();
+	EXEC SQL CONNECT :uid;
+	if (sqlca.sqlcode == 0)
+		printf("Connect successful!\n");
+	return sqlca.sqlcode;
+}
+
+int insert()
+{
+	int id=104;
+	char name[]="c";
+	EXEC SQL WHENEVER SQLERROR DO sqlerror();
+	EXEC SQL INSERT INTO TEST(ID,NAME) values(:id,:name);
+	if (sqlca.sqlcode == 0)
+	{
+		//EXEC SQL COMMIT;
+		printf("Insert successful!\n");
+	}
+	return sqlca.sqlcode;
+}
+
+int del()
+{
+	int id = 11;
+	EXEC SQL WHENEVER SQLERROR DO sqlerror();
+	EXEC SQL DELETE FROM TEST WHERE ID=:id;
+	if (sqlca.sqlcode == 0)
+	{
+		//EXEC SQL COMMIT;
+		printf("Del successful!\n");
+	}
+	return sqlca.sqlcode;
+}
+
+int select()
+{
+	int id;
+	char name[2]={0x00};
+	EXEC SQL WHENEVER SQLERROR DO sqlerror();
+	EXEC SQL SELECT ID,NAME INTO :id,:name FROM TEST WHERE ID = 100;
+	if (sqlca.sqlcode == 0)
+	{
+	//	EXEC SQL COMMIT RELEASE;
+		printf("Select successful!\n");
+		printf("ID=%d Name=%s\n",id,name);
+	}
+	return sqlca.sqlcode;
+}
+
+int main()
+{
+	if(login() != 0)
+	{
+		printf("Connect error!\n");
+		return -1;
+	}
+	insert();
+	del();
+	select();
+	EXEC SQL COMMIT RELEASE;
+	return 0;
+}
+

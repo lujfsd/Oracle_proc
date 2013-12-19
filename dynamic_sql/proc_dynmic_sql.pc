@@ -1,0 +1,140 @@
+#include <stdio.h>
+#include <string.h>
+#include <sqlca.h>
+#include <oraca.h>
+EXEC ORACLE OPTION        (ORACA=YES);
+EXEC ORACLE OPTION        (RELEASE_CURSOR=YES);
+
+void sqlerror()
+{
+
+	printf("%s:ORACLE error:%.70s\n",__func__,sqlca.sqlerrm.sqlerrmc);
+	EXEC SQL WHENEVER SQLERROR continue;
+	EXEC SQL rollback;
+}
+
+void method1()
+{
+
+	char *delstr="DELETE FROM TEST WHERE ID=3";
+
+	EXEC SQL WHENEVER SQLERROR DO sqlerror();
+	EXEC SQL WHENEVER SQLWARNING DO sqlerror();
+
+	EXEC SQL EXECUTE IMMEDIATE :delstr;
+	if(sqlca.sqlcode == 0)
+		printf("%s:Del Successful\n",__func__);
+	else
+		printf("%s:%.70s\n",__func__,sqlca.sqlerrm.sqlerrmc);
+	EXEC SQL EXECUTE IMMEDIATE "COMMIT";
+	if(sqlca.sqlcode == 0)
+		printf("%s:Commit Successful\n",__func__);
+}
+
+void method2()
+{
+
+	char *dynstr="INSERT INTO TEST(ID,NAME) values(:v1,:v2)";
+	VARCHAR strtmp[80];
+	int delid,insid;
+	char name[]="c";
+	strtmp.len = sprintf((char *)strtmp.arr,"DELETE FROM TEST WHERE ID=:v1");
+
+	EXEC SQL WHENEVER SQLERROR DO sqlerror();
+	EXEC SQL WHENEVER SQLWARNING DO sqlerror();
+
+	EXEC SQL PREPARE del FROM :strtmp;
+	EXEC SQL PREPARE ins FROM :dynstr;
+	while(1)
+	{
+
+		printf("Enter the num what you want to del:");
+		scanf("%d",&delid);
+		if(delid == 0)
+			break;
+		printf("Enter the num what you want to insert:");
+		scanf("%d",&insid);
+
+		EXEC SQL EXECUTE del USING :delid;
+		if(sqlca.sqlcode == 0)
+			printf("%s:Del Successful\n",__func__);
+		else
+			printf("%s:Del Error:%.70s\n",__func__,sqlca.sqlerrm.sqlerrmc);
+
+		EXEC SQL EXECUTE ins USING :insid,:name;
+		if(sqlca.sqlcode == 0)
+			printf("%s:Insert Successful\n",__func__);
+		else
+			printf("%s:Insert Error:%.70s\n",__func__,sqlca.sqlerrm.sqlerrmc);
+
+		/********
+		  这里需要进行commit操作，进行更新，不然会报invalid cursor错误
+		 *********/
+		EXEC SQL COMMIT ;
+		if(sqlca.sqlcode == 0)
+			printf("%s:Commit Successful\n",__func__);
+		else
+			printf("%s:Commit Error:%.70s\n",__func__,sqlca.sqlerrm.sqlerrmc);
+	}
+}
+
+void method3()
+{
+
+	char *dynstr="SELECT ID,NAME FROM TEST WHERE ID=:v1";
+	int id,outid[10];
+	char name[10][2];
+
+	EXEC SQL WHENEVER SQLERROR DO sqlerror();
+	EXEC SQL WHENEVER SQLWARNING DO sqlerror();
+
+	EXEC SQL PREPARE S FROM :dynstr;
+	EXEC SQL DECLARE select_cur CURSOR FOR S;
+	while(1)
+	{
+
+		printf("Enter the num what you want to select:");
+		scanf("%d",&id);
+		if(id == 0)
+			break;
+		EXEC SQL OPEN select_cur USING :id;
+		EXEC SQL FETCH select_cur INTO :outid,:name;
+
+		/************
+		 ****sqlca.sqlerrd[2] 记录受影响的行数，即查询到多少行。也适用于delete
+		 *************/
+		printf("The row num:%d\n",sqlca.sqlerrd[2]);
+		if(sqlca.sqlerrd[2] != 0)
+		{
+
+			for(id = 0;id < sqlca.sqlerrd[2];id++)
+				printf("%s:ID=%d name=%s\n",__func__,outid[id],name[id]);
+		}
+		else
+		{
+
+			printf("%s:Select Error:%.70s\n",__func__,sqlca.sqlerrm.sqlerrmc);
+		}
+	}
+	EXEC SQL CLOSE select_cur;
+}
+
+int main()
+{
+
+	char uid[]="test/test@192.168.30.60:1521/rsdb";
+
+	EXEC SQL WHENEVER SQLERROR DO sqlerror();
+	EXEC SQL CONNECT :uid;
+	if(sqlca.sqlcode == 0)
+		printf("Connect Successful\n");
+
+	//        method1();
+	//        method2();
+	method3();
+	EXEC SQL COMMIT RELEASE;
+	if(sqlca.sqlcode == 0)
+		printf("%s:Commit Successful\n",__func__);
+	return 0;
+}
+
