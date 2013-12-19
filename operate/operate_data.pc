@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <sqlca.h>
+#include <oraca.h>
+EXEC ORACLE OPTION        (ORACA=YES);
+EXEC ORACLE OPTION        (RELEASE_CURSOR=YES);
 
 void sqlerror()
 {
@@ -61,6 +64,30 @@ int select()
 	return sqlca.sqlcode;
 }
 
+int cursor()
+{
+	int id=10;
+	int outid[10];
+	char name[10][2];
+	EXEC SQL WHENEVER SQLERROR DO sqlerror();
+	EXEC SQL DECLARE select_cur CURSOR FOR SELECT ID,NAME FROM TEST WHERE ID=:id;
+	EXEC SQL OPEN select_cur;
+	EXEC SQL FETCH 	select_cur INTO :outid,:name;
+	if(sqlca.sqlerrd[2] != 0)
+	{
+
+		for(id = 0;id < sqlca.sqlerrd[2];id++)
+			printf("%s:ID=%d name=%s\n",__func__,outid[id],name[id]);
+	}
+	else
+	{
+
+		printf("%s:Select Error:%.70s\n",__func__,sqlca.sqlerrm.sqlerrmc);
+	}
+	EXEC SQL CLOSE select_cur;
+	return sqlca.sqlcode;
+}
+
 int main()
 {
 	if(login() != 0)
@@ -68,9 +95,10 @@ int main()
 		printf("Connect error!\n");
 		return -1;
 	}
-	insert();
-	del();
-	select();
+//	insert();
+//	del();
+//	select();
+	cursor();
 	EXEC SQL COMMIT RELEASE;
 	return 0;
 }
