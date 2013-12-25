@@ -1,6 +1,9 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sqlca.h>
+#include <sqlda.h>
+#include <sqlcpr.h>
 #include <oraca.h>
 EXEC ORACLE OPTION        (ORACA=YES);
 EXEC ORACLE OPTION        (RELEASE_CURSOR=YES);
@@ -119,6 +122,119 @@ void method3()
 	EXEC SQL CLOSE select_cur;
 }
 
+
+void method4()
+{
+	char *dynstr="select ID,NAME from TEST where ID=:num";
+	SQLDA *select_des;
+	SQLDA *bind_des;
+	int i,nullok;
+	char hostval[12];
+	int prec,scal;
+
+	/*SQLSQLDAAlloc的第一个参数应该是SQL_SINGLE_RCTX，但是会报错，所以这里用0代替*/
+	select_des = SQLSQLDAAlloc(0,2,5,0);
+	bind_des = SQLSQLDAAlloc(0,1,5,4);
+	select_des->N = 2;
+	bind_des->N = 1;
+
+	EXEC SQL WHENEVER SQLERROR DO sqlerror();
+	EXEC SQL WHENEVER SQLWARNING DO sqlerror();
+
+	/*准备SQL语句*/
+	EXEC SQL PREPARE method_4 FROM :dynstr;
+	/*声明游标*/
+	EXEC SQL DECLARE tmp_cursor CURSOR FOR method_4;
+
+	/* 从动态SQL语句中获取绑定变量信息并写入bind_des*/
+	EXEC SQL DESCRIBE BIND VARIABLES FOR method_4 INTO bind_des;
+
+	/*重置绑定变量最大数目*/
+	bind_des->N = bind_des->F;
+	printf("%d:bind_des->F=%d\n",__LINE__,bind_des->F);
+
+	/*获取绑定变量的值并分配空间,注意变量类型T[i]*/
+	for(i = 0; i < bind_des->F;i++)
+	{
+		printf("Enter value of the bind variables %.*s:",(int)bind_des->C[i],bind_des->S[i]);
+		scanf("%s",hostval);
+
+		printf("%d:the hostval is %s\n",__LINE__,hostval);
+
+		bind_des->L[i] = strlen(hostval);
+		bind_des->V[i] = calloc(bind_des->L[i]+1,1);
+		bind_des->I[i] = (unsigned short *)calloc(sizeof(short),1);
+		strcpy(bind_des->V[i],hostval);
+		*(bind_des->I[i]) = 0;
+		bind_des->T[i] = 1;
+		memset(hostval,0x00,sizeof(hostval));
+	}
+
+	printf("%d:get value ok!\n",__LINE__);
+	EXEC SQL OPEN tmp_cursor USING DESCRIPTOR bind_des;
+	/*DESCRIBE select-list*/
+	EXEC SQL DESCRIBE SELECT LIST FOR method_4 INTO select_des;
+	select_des->N = select_des->F;
+	printf("%d:select_des->F=%d\n",__LINE__,select_des->F);
+	for(i=0;i<select_des->F;i++)
+	{
+		SQLColumnNullCheck(0,(unsigned short *)&(select_des->T[i]),(unsigned short *)&(select_des->T[i]),&nullok);
+		printf("%d:T=%d,nullok=%d\n",__LINE__,select_des->T[i],nullok);
+		switch(select_des->T[i])
+		{
+			case 1:break;
+			case 2:
+				   SQLNumberPrecV6(0,(unsigned long*)&(select_des->L[i]),&prec,&scal);
+				   printf("%d:prec=%d,scal=%d\n",__LINE__,prec,scal);
+				   if(prec == 0)
+					   prec = 38;
+				   select_des->L[i] = prec+2;
+				   if(scal < 0)
+					   select_des->L[i] += -scal;
+				   select_des->T[i] = 5;
+				   break;
+			case 8:select_des->L[i] = 240;
+				   break;
+			case 11:select_des->L[i] = 18;
+					break;
+			case 12:select_des->L[i] = 9;
+					break;
+			case 23:break;
+			case 24:select_des->L[i] = 240;
+					break;
+		}
+		printf("%d:select_des->L=%d\n\n",__LINE__,select_des->L[i]);
+		select_des->V[i] = calloc(select_des->L[i]+1,1);
+		select_des->I[i] = (unsigned short *)calloc(sizeof(short),1);
+	}
+
+	EXEC SQL WHENEVER NOT FOUND DO break;
+	while(1)
+	{
+		EXEC SQL FETCH tmp_cursor USING DESCRIPTOR select_des;
+		printf("%d:the row is %d\n",__LINE__,sqlca.sqlerrd[2]);
+		for(i=0;i<select_des->F;i++)
+		{
+			printf("V=%s\n",select_des->V[i]);
+			//	printf("I=%d\n",*select_des->I[i]);
+		}
+		memset(select_des->V[i],0x00,select_des->L[i]);
+	}
+	for(i=0;i<select_des->F;i++)
+	{
+		free(select_des->V[i]);
+		free(select_des->I[i]);
+	}
+	for(i=0;i<bind_des->F;i++)
+	{
+		free(bind_des->V[i]);
+		free(bind_des->I[i]);
+	}
+	SQLSQLDAFree(0,select_des);
+	SQLSQLDAFree(0,bind_des);
+	EXEC SQL CLOSE tmp_cursor;
+}
+
 int main()
 {
 
@@ -128,10 +244,17 @@ int main()
 	EXEC SQL CONNECT :uid;
 	if(sqlca.sqlcode == 0)
 		printf("Connect Successful\n");
+	else
+	{
+		printf("Connect error!\n");
+		return -1;
+	}
+
 
 	//        method1();
 	//        method2();
-	method3();
+	//method3();
+	method4();
 	EXEC SQL COMMIT RELEASE;
 	if(sqlca.sqlcode == 0)
 		printf("%s:Commit Successful\n",__func__);
